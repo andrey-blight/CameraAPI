@@ -8,12 +8,10 @@ from camera_functions import get_video_stream, start_camera_processing
 from RTSPCamera import RTSPCamera
 
 CAMERA_IPS = {
-    1: "rtsp://test:test@87.229.255.237:554/0",
-    2: "rtsp://test:test@87.229.255.237:554/0",
-    3: "rtsp://test:test@87.229.255.237:554/0",
+    1: "rtsp://itlcamview:hatp344gh@192.168.100.22:554/live/main",
 }
 CAMERAS = {
-    1: RTSPCamera("rtsp://test:test@87.229.255.237:554/0")
+    1: RTSPCamera("rtsp://itlcamview:hatp344gh@192.168.100.22:554/live/main")
 }
 
 
@@ -21,10 +19,12 @@ CAMERAS = {
 @asynccontextmanager
 async def lifespan(f_app: FastAPI):
     for i, camera in CAMERAS.items():
-        await camera.start()
+        camera.start()
 
     yield
 
+    for i, camera in CAMERAS.items():
+        camera.stop()
     print("End of lifespan")
 
 

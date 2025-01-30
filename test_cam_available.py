@@ -31,5 +31,5 @@ def main(rtsp_url):
 
 
 if __name__ == "__main__":
-    rtsp_url = "rtsp://test:test@87.229.255.237:554/0"  # Replace with your RTSP URL
+    rtsp_url = "rtsp://itlcamview:hatp344gh@192.168.100.22:554/live/main"  # Replace with your RTSP URL
     main(rtsp_url)

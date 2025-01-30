@@ -1,3 +1,4 @@
 opencv-python
 fastapi
-opencv-python-headless
+ffmpeg-python
+uvicorn
