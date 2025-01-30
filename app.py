@@ -5,12 +5,23 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
 from camera_functions import get_video_stream, start_camera_processing
+from RTSPCamera import RTSPCamera
+
+CAMERA_IPS = {
+    1: "rtsp://test:test@87.229.255.237:554/0",
+    2: "rtsp://test:test@87.229.255.237:554/0",
+    3: "rtsp://test:test@87.229.255.237:554/0",
+}
+CAMERAS = {
+    1: RTSPCamera("rtsp://test:test@87.229.255.237:554/0")
+}
 
 
-# Фоновая задача для запуска камер
+# Start saving stream
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    asyncio.create_task(start_camera_processing(CAMERA_IPS))
+async def lifespan(f_app: FastAPI):
+    for i, camera in CAMERAS.items():
+        await camera.start()
 
     yield
 
@@ -18,22 +29,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-CAMERA_IPS = {
-    1: "rtsp://test:test@87.229.255.237:554/0",
-    2: "rtsp://test:test@87.229.255.237:554/0",
-    3: "rtsp://test:test@87.229.255.237:554/0",
-}
+
 
 @app.get("/cam/{cam_id}")
 async def stream_camera(cam_id: int):
-    """Эндпоинт для стрима видео с камеры по cam_id."""
+    """Get camera stream by id"""
 
-    if cam_id not in CAMERA_IPS:
+    if cam_id not in CAMERAS:
         raise HTTPException(status_code=404, detail="Камера не найдена")
 
-    rtsp_url = CAMERA_IPS[cam_id]
-    return StreamingResponse(get_video_stream(rtsp_url),
-                             media_type="multipart/x-mixed-replace; boundary=frame")
+    camera = CAMERAS[cam_id]
+    return camera.stream_response()
 
 
 @app.get("/cam")
