@@ -1,24 +1,30 @@
+import time
+
 import cv2
 import threading
 from collections import deque
 
 
 class RTSPCamera:
-    def __init__(self, rtsp_url: str, fps: int = 10, buffer_seconds: int = 5):
+    FPS = 10
+
+    def __init__(self, rtsp_url: str, buffer_seconds: int = 5):
         """
         Init camera
 
         :param rtsp_url: camera's URL RTSP
-        :param fps: speed of camera (default: 10)
-        :param buffer_seconds: time for buffering (default: 5)
+        :param buffer_seconds: time for buffering (default: 5 seconds)
         """
         self.rtsp_url = rtsp_url
-        self.fps = fps
-        self.buffer_size = fps * buffer_seconds  # max size of frames
+        self.buffer_size = self.FPS * buffer_seconds  # max size of frames
         self.frames = deque(maxlen=self.buffer_size)  # Deque for frame storage
+
         self.running = False  # Flag for starting save stream
-        self.lock = threading.Lock()
-        self.capture_thread = None
+        self.lock = threading.Lock()  # Lock for synchronize frames deque
+        self.capture_thread = None  # Thread of capturing
+
+    def __str__(self):
+        return self.rtsp_url
 
     def start(self):
         """Start frame storaging"""
@@ -38,39 +44,43 @@ class RTSPCamera:
             print(f"Can't open camera stream {self.rtsp_url}")
             return
 
+        index = 0
+
         while self.running:
+            index += 1
+            index %= 3
+
             ret, frame = cap.read()
 
-            if ret:
+            if ret and index != 0:
                 frame = cv2.resize(frame, (1920 // 2, 1080 // 2))
+
                 with self.lock:
                     self.frames.append(frame)
 
         cap.release()
 
-    # async def get_last_video(self) -> bytes:
-    #     """
-    #     Get last video frame duration buffer_seconds
-    #     :return: Video bytes
-    #     """
-    #     async with self.lock:
-    #         if not self.frames:
-    #             raise ValueError("No frames available")
-    #         frames_copy = list(self.frames)
-    #
-    #     height, width, _ = frames_copy[0].shape
-    #     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    #     video_path = "/tmp/last_5_seconds.mp4"
-    #     out = cv2.VideoWriter(video_path, fourcc, self.fps, (width, height))
-    #
-    #     for frame in frames_copy:
-    #         out.write(frame)
-    #     out.release()
-    #
-    #     with open(video_path, "rb") as video_file:
-    #         video_bytes = video_file.read()
-    #
-    #     return video_bytes
+    def save_video(self) -> str:
+        """
+        Get last video frame duration buffer_seconds
+        :return: Video bytes
+        """
+        with self.lock:
+            if not self.frames:
+                raise ValueError("No frames available")
+            frames_copy = list(self.frames)
+
+        height, width, _ = frames_copy[0].shape
+        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+        video_path = "test1.mp4"  # TODO: generate custom path
+        out = cv2.VideoWriter(video_path, fourcc, self.FPS, (width, height))
+
+        for frame in frames_copy:
+            out.write(frame)
+        out.release()
+        # TODO: change codec to mp4 using "ffmpeg -i test1.mp4 -vcodec libx264 -strict -2 output.mp4"
+        return video_path
+
     #
     # async def stream_response(self):
     #     """
@@ -104,7 +114,12 @@ class RTSPCamera:
 
 def main():
     cam = RTSPCamera("rtsp://itlcamview:hatp344gh@192.168.100.22:554/live/main")
+    print("started")
     cam.start()
+    time.sleep(5)
+
+    cam.save_video()
+    print("done")
 
 
 if __name__ == '__main__':

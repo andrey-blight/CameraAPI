@@ -1,15 +1,10 @@
-import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
-from camera_functions import get_video_stream, start_camera_processing
 from RTSPCamera import RTSPCamera
 
-CAMERA_IPS = {
-    1: "rtsp://itlcamview:hatp344gh@192.168.100.22:554/live/main",
-}
 CAMERAS = {
     1: RTSPCamera("rtsp://itlcamview:hatp344gh@192.168.100.22:554/live/main")
 }
@@ -44,9 +39,16 @@ async def stream_camera(cam_id: int):
 
 @app.get("/cam")
 async def get_cameras_list():
-    return CAMERA_IPS
+    return {cam_id: str(cam) for cam_id, cam in CAMERAS.items()}
 
 
 @app.get("/cam/story/{cam_id}")
-async def get_camera_story(cam_id: int):
-    pass
+def get_camera_story(cam_id: int):
+    # video_path = CAMERAS[cam_id].save_video()
+    video_path = "test1.mp4"
+
+    def iter_file(path):
+        with open(path, mode="rb") as file:
+            yield from file
+
+    return StreamingResponse(iter_file(video_path), media_type="video/mp4")
