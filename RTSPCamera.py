@@ -1,7 +1,9 @@
+import subprocess
 import time
-
-import cv2
+import os
 import threading
+import cv2
+
 from collections import deque
 
 
@@ -52,8 +54,8 @@ class RTSPCamera:
 
             ret, frame = cap.read()
 
-            if ret and index != 0:
-                frame = cv2.resize(frame, (1920 // 2, 1080 // 2))
+            if ret:
+                frame = cv2.resize(frame, (1920, 1080))
 
                 with self.lock:
                     self.frames.append(frame)
@@ -72,13 +74,20 @@ class RTSPCamera:
 
         height, width, _ = frames_copy[0].shape
         fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-        video_path = "test1.mp4"  # TODO: generate custom path
-        out = cv2.VideoWriter(video_path, fourcc, self.FPS, (width, height))
+        video_path_tmp = "test1_tmp.mp4"  # TODO: generate custom path
+        video_path = "test1.mp4"
+        out = cv2.VideoWriter(video_path_tmp, fourcc, self.FPS, (width, height))
 
         for frame in frames_copy:
             out.write(frame)
         out.release()
-        # TODO: change codec to mp4 using "ffmpeg -i test1.mp4 -vcodec libx264 -strict -2 output.mp4"
+
+        convert_command = [
+            "ffmpeg", "-y", "-i", video_path_tmp, "-vcodec", "libx264", video_path
+        ]
+        subprocess.run(convert_command)
+        os.remove(video_path_tmp)
+
         return video_path
 
     #

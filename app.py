@@ -43,9 +43,8 @@ async def get_cameras_list():
 
 
 @app.get("/cam/story/{cam_id}")
-def get_camera_story(cam_id: int):
-    # video_path = CAMERAS[cam_id].save_video()
-    video_path = "test1.mp4"
+async def get_camera_story(cam_id: int):
+    video_path = CAMERAS[cam_id].save_video()
 
     def iter_file(path):
         with open(path, mode="rb") as file:
