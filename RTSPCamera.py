@@ -1,14 +1,15 @@
-import subprocess
-import time
-import os
-import threading
 import cv2
-
+import ffmpeg
+import hashlib
+import tempfile
+import time
+import threading
+from datetime import datetime
 from collections import deque
 
 
 class RTSPCamera:
-    FPS = 10
+    FPS = 15
 
     def __init__(self, rtsp_url: str, buffer_seconds: int = 5):
         """
@@ -46,11 +47,7 @@ class RTSPCamera:
             print(f"Can't open camera stream {self.rtsp_url}")
             return
 
-        index = 0
-
         while self.running:
-            index += 1
-            index %= 3
 
             ret, frame = cap.read()
 
@@ -72,23 +69,24 @@ class RTSPCamera:
                 raise ValueError("No frames available")
             frames_copy = list(self.frames)
 
-        height, width, _ = frames_copy[0].shape
-        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-        video_path_tmp = "test1_tmp.mp4"  # TODO: generate custom path
-        video_path = "test1.mp4"
-        out = cv2.VideoWriter(video_path_tmp, fourcc, self.FPS, (width, height))
+        with tempfile.TemporaryDirectory() as tmpdir:
 
-        for frame in frames_copy:
-            out.write(frame)
-        out.release()
+            for i, frame in enumerate(frames_copy):
+                frame_filename = f"{tmpdir}/frame_{i:03d}.png"
+                cv2.imwrite(frame_filename, frame)
 
-        convert_command = [
-            "ffmpeg", "-y", "-i", video_path_tmp, "-vcodec", "libx264", video_path
-        ]
-        subprocess.run(convert_command)
-        os.remove(video_path_tmp)
+            output_video = f"tmp/{self._get_hash()}.mp4"
+            ffmpeg.input(f'{tmpdir}/frame_%03d.png', framerate=15).output(output_video, vcodec='libx264',
+                                                                          pix_fmt='yuv420p').run()
 
-        return video_path
+        return output_video
+
+    def _get_hash(self) -> str:
+        cur_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        str_to_hash = f"{cur_time}_{self.rtsp_url}"
+
+        return hashlib.sha256(str_to_hash.encode()).hexdigest()
 
     #
     # async def stream_response(self):
@@ -121,15 +119,11 @@ class RTSPCamera:
     #                              media_type="multipart/x-mixed-replace; boundary=frame")
 
 
-def main():
+if __name__ == '__main__':
     cam = RTSPCamera("rtsp://itlcamview:hatp344gh@192.168.100.22:554/live/main")
     print("started")
     cam.start()
-    time.sleep(5)
+    time.sleep(10)
 
     cam.save_video()
     print("done")
-
-
-if __name__ == '__main__':
-    main()

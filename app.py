@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -47,7 +48,10 @@ async def get_camera_story(cam_id: int):
     video_path = CAMERAS[cam_id].save_video()
 
     def iter_file(path):
-        with open(path, mode="rb") as file:
-            yield from file
+        try:
+            with open(path, mode="rb") as file:
+                yield from file
+        finally:
+            os.remove(path)
 
     return StreamingResponse(iter_file(video_path), media_type="video/mp4")
