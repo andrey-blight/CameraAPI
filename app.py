@@ -7,7 +7,11 @@ from fastapi.responses import StreamingResponse
 from RTSPCamera import RTSPCamera
 
 CAMERAS = {
-    1: RTSPCamera("rtsp://itlcamview:hatp344gh@192.168.100.22:554/live/main")
+    1: RTSPCamera("rtsp://itlcamview:hatp344gh@192.168.100.22:554/live/main"),
+    2: RTSPCamera("rtsp://itlcamview:hatp344gh@192.168.100.10:554/live/main"),
+    3: RTSPCamera("rtsp://itlcamview:hatp344gh@192.168.100.5:554/live/main"),
+    4: RTSPCamera("rtsp://itlcamview:hatp344gh@192.168.100.116:554/live/main"),
+    5: RTSPCamera("rtsp://itlcamview:hatp344gh@192.168.100.102:554/live/main")
 }
 
 
