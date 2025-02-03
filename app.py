@@ -45,6 +45,10 @@ async def get_cameras_list():
 
 @app.get("/cam/story/{cam_id}")
 async def get_camera_story(cam_id: int):
+
+    if cam_id not in CAMERAS:
+        raise HTTPException(status_code=404, detail="Камера не найдена")
+
     video_path = CAMERAS[cam_id].save_video()
 
     def iter_file(path):

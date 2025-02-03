@@ -7,6 +7,8 @@ import threading
 from datetime import datetime
 from collections import deque
 
+from fastapi.responses import StreamingResponse
+
 
 class RTSPCamera:
     FPS = 15
@@ -88,35 +90,34 @@ class RTSPCamera:
 
         return hashlib.sha256(str_to_hash.encode()).hexdigest()
 
-    #
-    # async def stream_response(self):
-    #     """
-    #     Get stream
-    #     :return: StreamingResponse
-    #     """
-    #
-    #     async def video_stream():
-    #         cap = cv2.VideoCapture(self.rtsp_url)
-    #         if not cap.isOpened():
-    #             print(f"Can't load camera {self.rtsp_url}")
-    #             return
-    #
-    #         while True:
-    #             ret, frame = cap.read()
-    #             if not ret:
-    #                 break
-    #             _, buffer = cv2.imencode('.jpg', frame)
-    #             frame_bytes = buffer.tobytes()
-    #             yield (
-    #                     b"--frame\r\n"
-    #                     b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
-    #             )
-    #             await asyncio.sleep(1 / self.fps)
-    #
-    #         cap.release()
-    #
-    #     return StreamingResponse(video_stream(),
-    #                              media_type="multipart/x-mixed-replace; boundary=frame")
+    def stream_response(self):
+        """
+        Get stream
+        :return: StreamingResponse
+        """
+
+        def video_stream():
+            cap = cv2.VideoCapture(self.rtsp_url)
+            if not cap.isOpened():
+                print(f"Can't load camera {self.rtsp_url}")
+                return
+
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    continue
+
+                _, buffer = cv2.imencode('.jpg', frame)
+                frame_bytes = buffer.tobytes()
+                yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
+
+            cap.release()
+
+        return StreamingResponse(video_stream(),
+                                 media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 if __name__ == '__main__':
