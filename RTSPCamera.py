@@ -1,32 +1,31 @@
-import cv2
-import ffmpeg
+import os
+import signal
+import subprocess
+
 import hashlib
 import tempfile
-import time
 import threading
 from datetime import datetime
-from collections import deque
 
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse
 
 
 class RTSPCamera:
-    FPS = 15
+    FPS = 10
 
-    def __init__(self, rtsp_url: str, buffer_seconds: int = 5):
+    def __init__(self, cam_id: str, rtsp_url: str, buffer_seconds: int = 3):
         """
         Init camera
 
         :param rtsp_url: camera's URL RTSP
         :param buffer_seconds: time for buffering (default: 5 seconds)
         """
+        self.cam_id = cam_id
         self.rtsp_url = rtsp_url
-        self.buffer_size = self.FPS * buffer_seconds  # max size of frames
-        self.frames = deque(maxlen=self.buffer_size)  # Deque for frame storage
-
-        self.running = False  # Flag for starting save stream
-        self.lock = threading.Lock()  # Lock for synchronize frames deque
-        self.capture_thread = None  # Thread of capturing
+        self.buffer_seconds = buffer_seconds
+        self.running = False
+        self.lock = threading.Lock()
+        self.process = None
 
     def __str__(self):
         return self.rtsp_url
@@ -34,97 +33,52 @@ class RTSPCamera:
     def start(self):
         """Start frame storaging"""
         self.running = True
-        self.capture_thread = threading.Thread(target=self._capture_frames)
-        self.capture_thread.start()
+        self.start_ffmpeg()
 
     def stop(self):
         """Stop frame storaging"""
         self.running = False
+        if self.process is not None:
+            self.process.send_signal(signal.SIGTERM)
+            self.process.wait()
+            self.process = None
 
-    def _capture_frames(self):
-        """Save frames in thread to self.frames."""
-        cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+    def start_ffmpeg(self):
+        """Запускает ffmpeg для указанной камеры"""
+        output_dir = f"hls/{self.cam_id}"
+        os.makedirs(output_dir, exist_ok=True)
+        print(self.cam_id)
+        command = [
+            "ffmpeg",
+            "-i", self.rtsp_url,  # Входной RTSP-поток
 
-        if not cap.isOpened():
-            print(f"Can't open camera stream {self.rtsp_url}")
-            return
+            # Видео
+            "-vf", "scale=640:360,format=yuv420p",  # Масштабирование на GPU
+            "-c:v", "libx264",  # Кодируем на CPU
+            "-preset", "veryfast",  # Баланс скорости и качества
+            "-r", "10",
 
-        while self.running:
+            # Формат вывода (HLS)
+            "-f", "hls",
+            "-hls_time", "2",  # Длительность каждого сегмента (в секундах)
+            "-hls_list_size", "5",  # Количество сегментов в плейлисте
+            "-hls_flags", "delete_segments",  # Удаление старых сегментов
+            "-hls_segment_filename", f"{output_dir}/segment_%03d.ts",  # Имена сегментов
+            f"{output_dir}/stream.m3u8"  # Имя плейлиста
+        ]
 
-            ret, frame = cap.read()
-
-            if ret:
-                frame = cv2.resize(frame, (1920, 1080))
-
-                with self.lock:
-                    self.frames.append(frame)
-
-        cap.release()
-
-    def save_video(self) -> str:
-        """
-        Get last video frame duration buffer_seconds
-        :return: Video bytes
-        """
-        with self.lock:
-            if not self.frames:
-                raise ValueError("No frames available")
-            frames_copy = list(self.frames)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-
-            for i, frame in enumerate(frames_copy):
-                frame_filename = f"{tmpdir}/frame_{i:03d}.png"
-                cv2.imwrite(frame_filename, frame)
-
-            output_video = f"tmp/{self._get_hash()}.mp4"
-            ffmpeg.input(f'{tmpdir}/frame_%03d.png', framerate=15).output(output_video, vcodec='libx264',
-                                                                          pix_fmt='yuv420p').run()
-
-        return output_video
-
-    def _get_hash(self) -> str:
-        cur_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        str_to_hash = f"{cur_time}_{self.rtsp_url}"
-
-        return hashlib.sha256(str_to_hash.encode()).hexdigest()
+        self.process = subprocess.Popen(command)
 
     def stream_response(self):
-        """
-        Get stream
-        :return: StreamingResponse
-        """
-
-        def video_stream():
-            cap = cv2.VideoCapture(self.rtsp_url)
-            if not cap.isOpened():
-                print(f"Can't load camera {self.rtsp_url}")
-                return
-
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    continue
-
-                _, buffer = cv2.imencode('.jpg', frame)
-                frame_bytes = buffer.tobytes()
-                yield (
-                        b"--frame\r\n"
-                        b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
-                )
-
-            cap.release()
-
-        return StreamingResponse(video_stream(),
-                                 media_type="multipart/x-mixed-replace; boundary=frame")
+        return FileResponse(f"hls/{self.cam_id}/stream.m3u8",
+                            headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 if __name__ == '__main__':
     cam = RTSPCamera("rtsp://itlcamview:hatp344gh@192.168.100.22:554/live/main")
     print("started")
     cam.start()
-    time.sleep(10)
-
-    cam.save_video()
-    print("done")
+    # time.sleep(10)
+    #
+    # cam.save_video()
+    # print("done")

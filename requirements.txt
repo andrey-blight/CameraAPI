@@ -2,3 +2,5 @@ opencv-python
 fastapi
 ffmpeg-python
 uvicorn
+websockets
+python-telegram-bot
