@@ -1,12 +1,9 @@
 import os
 import signal
 import subprocess
-
-import hashlib
-import tempfile
+import shutil
 import threading
-from datetime import datetime
-
+import glob
 from fastapi.responses import FileResponse
 
 
@@ -32,6 +29,8 @@ class RTSPCamera:
 
     def start(self):
         """Start frame storaging"""
+        if self.running:
+            return
         self.running = True
         self.start_ffmpeg()
 
@@ -42,36 +41,72 @@ class RTSPCamera:
             self.process.send_signal(signal.SIGTERM)
             self.process.wait()
             self.process = None
+            try:
+                shutil.rmtree(f"hls/{self.cam_id}")
+            except Exception:
+                print("No dir")
 
     def start_ffmpeg(self):
         """Запускает ffmpeg для указанной камеры"""
         output_dir = f"hls/{self.cam_id}"
         os.makedirs(output_dir, exist_ok=True)
-        print(self.cam_id)
+
         command = [
             "ffmpeg",
-            "-i", self.rtsp_url,  # Входной RTSP-поток
+            "-rtsp_transport", "tcp",  # 🔹 TCP для стабильности (по умолчанию UDP)
+            "-i", self.rtsp_url,
 
-            # Видео
-            "-vf", "scale=640:360,format=yuv420p",  # Масштабирование на GPU
-            "-c:v", "libx264",  # Кодируем на CPU
-            "-preset", "veryfast",  # Баланс скорости и качества
-            "-r", "10",
+            # 🔹 Декодирование
+            "-fflags", "nobuffer",  # Убираем буферизацию
+            "-flags", "+global_header",  # Глобальные заголовки
+            "-threads", "2",  # Ограничиваем потоки для стабильности
 
-            # Формат вывода (HLS)
+            # 🔹 Видео
+            "-vf", "scale=640:360,format=yuv420p",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-tune", "zerolatency",  # 🔹 Минимальная задержка
+            "-crf", "23",  # 🔹 Контроль качества (0 — макс, 51 — худшее)
+            "-b:v", "800k",  # 🔹 Оптимальный битрейт
+            "-maxrate", "900k",
+            "-bufsize", "1200k",
+
+            # 🔹 FPS и ключевые кадры
+            "-r", "10",  # FPS = 10
+            "-g", "50",  # 🔹 GOP = 10 FPS * 5 сек
+            "-keyint_min", "50",  # 🔹 Ключевой кадр каждые 50 кадров
+
+            # 🔹 Аудио (если нужно)
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-ac", "2",
+            "-ar", "44100",
+
+            # 🔹 HLS Настройки
             "-f", "hls",
-            "-hls_time", "2",  # Длительность каждого сегмента (в секундах)
-            "-hls_list_size", "5",  # Количество сегментов в плейлисте
-            "-hls_flags", "delete_segments",  # Удаление старых сегментов
-            "-hls_segment_filename", f"{output_dir}/segment_%03d.ts",  # Имена сегментов
-            f"{output_dir}/stream.m3u8"  # Имя плейлиста
+            "-hls_time", "5",  # 🔹 Длина сегмента 5 сек
+            "-hls_list_size", "5",
+            "-hls_flags", "delete_segments+append_list",  # 🔹 Удаляем старые, но не прерываем поток
+            "-hls_segment_type", "mpegts",  # 🔹 Формат сегментов
+            "-hls_allow_cache", "0",  # 🔹 Отключаем кеширование
+            "-hls_segment_filename", f"{output_dir}/segment_%03d.ts",
+            f"{output_dir}/stream.m3u8"
         ]
 
-        self.process = subprocess.Popen(command)
+        self.process = subprocess.Popen(command,
+                                        stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL
+                                        )
 
     def stream_response(self):
         return FileResponse(f"hls/{self.cam_id}/stream.m3u8",
                             headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    def get_latest_segment(self):
+        """Находит последний `.ts` файл по времени изменения"""
+        ts_files = glob.glob(os.path.join(f"hls/{self.cam_id}", "segment_*.ts"))
+        if not ts_files:
+            return None
+        return max(ts_files, key=os.path.getmtime)
 
 
 if __name__ == '__main__':

@@ -3,9 +3,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
 from camera_parser import parse
 from models import AlertModel
 from telegram import Bot
@@ -92,19 +93,14 @@ async def get_cameras_list():
 
 @app.get("/cam/story/{cam_id}")
 async def get_camera_story(cam_id: int):
+    """Отдаёт последний сегмент `.ts`"""
     if cam_id not in CAMERAS:
         raise HTTPException(status_code=404, detail="Камера не найдена")
 
-    video_path = CAMERAS[cam_id].save_video()
-
-    def iter_file(path):
-        try:
-            with open(path, mode="rb") as file:
-                yield from file
-        finally:
-            os.remove(path)
-
-    return StreamingResponse(iter_file(video_path), media_type="video/mp4")
+    latest_file = CAMERAS[cam_id].get_latest_segment()
+    if latest_file:
+        return FileResponse(latest_file, media_type="video/MP2T")
+    raise HTTPException(status_code=404, detail="Сегменты не найдены")
 
 
 clients = set()
@@ -124,6 +120,8 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.post("/alert")
 async def send_alert(body: AlertModel):
     message = {"alert": f"{body.cam_id} {body.resp_type}"}
+
+    print(message)
 
     # await send_telegram_message(message["alert"])
 
